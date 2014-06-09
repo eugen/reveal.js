@@ -41,21 +41,31 @@
 
 *Traditionally:*
 
-A search engine with support for text analysis, faceting, integrated spell-checker
+A search engine with support for text analysis, faceting, integrated
+spell-checker, stemming, etc.
               </script></section>
               <section data-markdown><script type="text/template">
 # What is Solr?
 
 *More recently:*
 
-A scalable NoSQL database with support for full text search
+A scalable NoSQL database with full text search support.
+(competition with elasticsearch worked wonders)
+              </script></section>
+              <section data-markdown><script type="text/template">
+# What is Solr? 
+*(technically speaking)*
 
+* a standalone service
+* written in Java
+* communication over HTTP
+* Apache Project, Apache 2.0 License
+* commercial support available
 
 
               </script></section>
               <section data-markdown><script type="text/template">
-# Part 1:
-## Solr the search engine
+# Solr the Search Engine
 
               </script></section>
               <section data-markdown><script type="text/template">
@@ -72,10 +82,11 @@ Low level library for creating, accessing and managing indexes
 
 Lucene is **mature**, used by *many* search-related libraries:
 
+* Solr
 * Compass
 * elasticsearch
-* Amazon CloudSearch
 * Hibernate Search
+* Amazon CloudSearch *(which actually uses Solr)*
 * ...
 
               </script></section>
@@ -83,247 +94,440 @@ Lucene is **mature**, used by *many* search-related libraries:
 
 ## Powered by Lucene
 
-Sharing the same core team, Solr is always kept in-sync with the latest version of Lucene.
+Part of the Apache Lucene Project, so it is always kept in-sync with the latest version of Lucene.
 
 *(does not always happen with the other projects)*
+              </script></section>
+              <section data-markdown><script type="text/template">
+## How data is organized
+
+* 1 server -> multiple cores
+* 1 core -> 1 schema + a collection of documents
+* 1 document -> list of key/value pairs
+* 1 value -> primitive value or list of values
 
               </script></section>
               <section data-markdown><script type="text/template">
-## How indexing works
-* documents  have multiple fields
-* each field can be single or multi-valued.
-* each value of a field is analyzed, tokenized and filtered according to **some rules*
+## What's a document
 
-              </script></section>
-              <section data-markdown><script type="text/template">
-## How indexing works
-
-The result of the analysis is a list of tokens used as keys in the index.
-
-
-              </script></section>
-              <section data-markdown><script type="text/template">
-## How indexing works
-
-An index is basically a map between (field, token) and the list of documents matching that token in that field.
-
-
-              </script></section>
-              <section data-markdown><script type="text/template">
-## How indexing works
-E.g. for the documents
+A collection of key/value pairs:
 ```
-john = {name: "John", hobbies: "cycling, gaming, snooker" }
-mary = {name: "Mary", hobbies: "reading, cycling" }
-```
-The index will look something like this:
-```
-"name:john" => [john]
-"name:mary" => [mary]
-"hobbies:cycling" => [john, mary]
-"hobbies:gaming" => [john]
-"hobbies:snooker" => [john]
-"hobbies:reading" => [mary]
+{
+  id: 4, 
+  firstName: "Homer", 
+  lastName: "Simpson", 
+  age: 40,
+  hobbies: ["Beer", "TV"]
+}
 ```
 
               </script></section>
               <section data-markdown><script type="text/template">
-## How indexing works
+## What's a document
 
-This is called an inverted index
-
-instead of
+Subdocuments are supported:
 ```
-document -> token
+{
+  id: 2945,
+  name: "Richie Rich",
+  cars: [
+    {id: 2653, name: "Ferrari"},
+    {id: 2658, name: "Bugatti"},
+    {id: 2659, name: "Maserati"}
+  ]
+}
 ```
-the mapping is
+.. though they are cumbersome to use.
+
+              </script></section>
+              <section data-markdown><script type="text/template">
+## The Schema
+
+A set of rules that describe 
+
+* how a document should look
+ * what fields can it have
+ * what is the type of those fields
+ * which ones are mandatory
+* how it will be indexed
+ * what processing will be applied to the values before indexing
+
+              </script></section>
+              <section data-markdown><script type="text/template">
+## The Schema
+
+A schema starts with the list of fields that can appear in a document:
 ```
-token -> [document]
+<schema name="cars" version="1.5">
+  <field name="_version_" type="long" indexed="true" stored="true"/>
+  <field name="id" type="string" indexed="true" stored="true" required="true"/> 
+  <field name="year" type="tint" indexed="true" stored="true"/>
+  <field name="manufacturer" type="string" indexed="true" stored="true"/>
+  <field name="model" type="string" indexed="true" stored="true"/>
+
+  <uniqueKey>id</uniqueKey>
+....
+</schema>
+```
+
+Fields with 
+
+* stored=false: cannot be retrieved after indexing.
+* indexed=false: cannot search by their values
+
+              </script></section>
+              <section data-markdown><script type="text/template">
+## The Schema
+
+The field types are also defined by the schema.
+
+Some declare primitive types:
+```
+  <fieldType name="string" class="solr.StrField" sortMissingLast="true" />
+  <fieldType name="int" class="solr.TrieIntField" />
+```
+While some have a text processing chain:
+```
+  <fieldType name="my_text_field" class="solr.TextField">
+    <analyzer>
+      <tokenizer class="solr.WhitespaceTokenizerFactory"/>
+      <filter class="solr.StopFilterFactory" ignoreCase="true"
+              words="stopwords.txt" />
+      <filter class="solr.SynonymFilterFactory"
+              synonyms="synonyms.txt" ignoreCase="true" expand="true"/>
+      <filter class="solr.LowerCaseFilterFactory"/>
+    </analyzer>
+  </fieldType>
+```
+              </script></section>
+              <section data-markdown><script type="text/template">
+## The Schema
+
+.. and others can take tens to hundreds of lines of configuration:
+```
+  <fieldType name="text_en_splitting" class="solr.TextField" 
+             positionIncrementGap="100">
+    <analyzer type="index">
+      <tokenizer class="solr.WhitespaceTokenizerFactory"/>
+      <filter class="solr.StopFilterFactory" ignoreCase="true"
+              words="lang/stopwords_en.txt/">
+      <filter class="solr.WordDelimiterFilterFactory"
+              generateWordParts="1" generateNumberParts="1" 
+              catenateWords="1" catenateNumbers="1" 
+              catenateAll="0" splitOnCaseChange="1"/>
+      <filter class="solr.LowerCaseFilterFactory"/>
+      <filter class="solr.KeywordMarkerFilterFactory" 
+              protected="protwords.txt"/>
+      <filter class="solr.PorterStemFilterFactory"/>
+    </analyzer>
+    <analyzer type="query">
+      <tokenizer class="solr.WhitespaceTokenizerFactory"/>
+      <filter class="solr.SynonymFilterFactory"
+              synonyms="synonyms.txt" ignoreCase="true" expand="true"/>
+      <filter class="solr.StopFilterFactory" ignoreCase="true"
+              words="lang/stopwords_en.txt" />
+      ...and so on
+    </analyzer>
+  </fieldType>
 ```
 
               </script></section>
               <section data-markdown><script type="text/template">
-## Index schema
 
-Getting back to the "some rules" part earlier:
+## The Schema
 
-> "each value of a field is analyzed, filtered and tokenized according to **some rules**"
+The processing chain is the place where the magic happens:
 
-              </script></section>
-              <section data-markdown><script type="text/template">
-## Index schema
+<br>
+*At index time*: transforms the text into a list of tokens
 
-Each field has a certain fieldType, which dictates how it should be analyzed and indexed. 
+*At query time*: transforms the user's query into a list of tokens
 
-The *Schema* is simply the total set of rules for all fields.
-
-              </script></section>
-              <section data-markdown><script type="text/template">
-## Index schema
-
-Built-in field types:
-
-- int/float/long/double: as expected
-- tint/float/long/double: faster range queries at the expense of index size
-- string: unprocessed strings
+<br>
+Oversimplifying: matching documents are those that have the same tokens as the user's query.
 
               </script></section>
               <section data-markdown><script type="text/template">
-## Index schema
-Built-in field types:
 
-- text_general: generic cross-language default tokenization, case insensitive, removing stop words and applying synonims
-- text_en
-- text_en_splitting
-- text_en_splitting_tight
-- ....
+## The Schema
+
+A chain has three types of elements:
+
+* charFilters: processes the full text value
+```
+   <charFilter class="solr.HTMLStripCharFilterFactory"/>
+   <charFilter class="solr.MappingCharFilterFactory" 
+                mapping="mapping-ISOLatin1Accent.txt"/>
+```
+* tokenizers: handlers splitting the text into tokens
+```
+   <tokenizer class="solr.WhitespaceTokenizerFactory"/>
+```
+* transforms a stream of tokens into a different stream of tokens
+```
+   <filter class="solr.LowerCaseFilterFactory"/>
+   <filter class="solr.StopFilterFactory"/>
+   <filter class="solr.PorterStemFilterFactory"/>
+```
+              </script></section>
+              <section data-markdown><script type="text/template">
+
+## The Schema
+
+Solr supports defining text processing chains for handling:
+
+* n-grams *(for fast pre/post-fix queries)*
+* stemming *(available in many forms and for many languages)*
+* synonyms
+* stopwords *(comes with predefined files for certain languages)*
+* soundex *(indexing words by how they sound)*
+* normalizing accents *(e.g. matching "brânză" when searching for
+"branza", or the other way around)*
+* [overwhelmingly more options](https://wiki.apache.org/solr/AnalyzersTokenizersTokenFilters)
 
               </script></section>
               <section data-markdown><script type="text/template">
-## Index schema
-The analysis process is extremely configurable:
+## The Schema - other features
 
-- tens of tokenizers
-- tens of filters: stopwords, synonyms
-- can apply at query time or index time
-- easily extensible with Java
-<br />
-Can *easily* become very complicated.
+Lazy field loading *- may decrease IO*
+
+Compressed fields *- decrease IO, increases CPU*
+
+              </script></section>
+
 
               </script></section>
               <section data-markdown><script type="text/template">
-## Index schema
+## The Schema - other features
 
-Other very important stuff:
+### Copy fields
 
-* stored = true/false: whether to store the original value of a field after indexing. 
- * can impact performance by increasing the size of the index
-* copyField: useful for analyzing a field two different ways.
-* dynamicField: useful for creating "catch-all" fields, or for cases when our documents have a variable structure
+Useful for having the same document field indexed in multiple ways, e.g
 
-              </script></section>
-              <section data-markdown><script type="text/template">
-## Index schema
+* one storing the original value for faceting and filtering
+* one tokenized, for searching
 
-From 4.4, Solr can work in schemaless mode. Field types are inferred from the JSON type.
+```
+  <field name="text" type="text_en_splitting" indexed="true"
+         stored="false" multiValued="true"/>
 
-For a high-performance search engine, this is unrecommended, but may be useful for a NoSQL database.
-
-              </script></section>
-              <section data-markdown><script type="text/template">
-## Index schema
-Getting a schema right is hard. 
-
-Getting it right **the first time** is impossible.
+  <copyField source="year" dest="text"/>
+  <copyField source="manufacturer" dest="text"/>
+  <copyField source="model" dest="text"/>
+```
 
               </script></section>
               <section data-markdown><script type="text/template">
-## Index schema
-The more features and/or performance you want, the more you'll need to learn to tweak the schema.
+## The schema - other features
+
+### Dynamic fields
+
+Useful when requiring extra flexibility, but don't want to go
+completely schemaless.
+
+```
+<dynamicField name="*_i" type="int" indexed="true" stored="true"/>
+<dynamicField name="*_s" type="string" indexed="true" stored="true"/>
+<dynamicField name="*" type="ignored"/>
+```
+
+              </script></section>
+              <section data-markdown><script type="text/template">
+## The Schema - other features
+
+### Schemaless mode
+
+* requires "managed" schema mode
+* automatically guess type when indexing
+* once guessed, add field to schema 
+* updates with different types will fail
+
+
+              </script></section>
+              <section data-markdown><script type="text/template">
+
+## The Schema - conclusions
+
+Getting a schema right is hard. Getting it right **the first time** is impossible.
+
+<br>
+Start from the example schemas, create your own from scratch.
+              </script></section>
+              <section data-markdown><script type="text/template">
+
+# Querying
+
+              </script></section>
+              <section data-markdown><script type="text/template">
+
+## Querying
+
+Simple filtering:
+```
+name:(John OR Mary) 
+  AND age:[18 TO *] 
+  AND -state:disabled
+```
+              </script></section>
+              <section data-markdown><script type="text/template">
+## Querying
+
+Prefix, suffix, fuzzy matching:
+```
+firstName:Ion* AND lastName:*escu AND function:persidnt~2
+```
+*(~2 means max Levenshtein distance of 2)*
 
               </script></section>
               <section data-markdown><script type="text/template">
 ## Querying
 
-At the basic level, a query is composed of:
+Distance between tokens:
 
-- multiple expressions of the form field:value
-- tied together with logical operators
+```
+"captain ship"~2
+```
+
+*(search for 'captain' appearing within at most 2 words from 'ship')*
 
               </script></section>
               <section data-markdown><script type="text/template">
+
+## Querying - Scoring
+
+Each matched document gets a score according to a TF-IDF scoring model.
+
+Boosting is a way of increasing the score for matching documents
+```
+name:John AND (
+  age:[* TO 18]^10
+  age:[18 TO 30]^50
+  age:[30 TO *]^5
+)
+```
+**WARNING**: Boosting right is hard!
+              </script></section>
+              <section data-markdown><script type="text/template">
+
 ## Querying
 
-E.g:
+Use functions for computing values, sorting, or boosting:
 
-- name:John AND hobbies:cycling
-- hobbies:(cycling AND gaming) AND name:Mary
-- hobbies:(cycling gaming) <- implied default operator OR, but is configurable
+```
+fl=sum(balance1,balance2)    <- obtain the value
+sort=dist(2, point1, point2) <- sort
+bf="ord(popularity)^0.5"     <- boost
+```
 
               </script></section>
               <section data-markdown><script type="text/template">
 
 ## Faceted search
 
-Grouping the matching documents into "buckets" and counting how many of them there are in each bucket.
+Grouping the matching documents and counting how many of them there are in each group
 
-E.g given a query for books publisher:BestPublisher, faceting by "genre" may result in:
+```
+q=turbo&
+facet=true&
+facet.field=manufacturer
 
-- Fiction (45)
-- Biographies (30)
-- History (10)
-
+facet_counts: {
+  facet_fields: {
+    manufacturer: [
+      "Saab", 45,
+      "Ford", 22,
+      "Peugeot", 21,
+      "Audi", 16,
+      "Citroen", 15
+    ]
+  }
+}
+```
 
               </script></section>
               <section data-markdown><script type="text/template">
 ## Faceted search
-Can arbitrarily facet by query, useful for counting documents in certain ranges, e.g. age intervals:
 
-- under 18: 44
-- 19-35: 80
-- over 35: 10
+Pivot faceting, aka hierarhical faceting:
+```
+facet.pivot=manufacturer,year,fuel_type
 
-              </script></section>
-              <section data-markdown><script type="text/template">
-## Faceted search
-
-Supports counting only values with a certain prefix, useful when fields contain breadcrumbs.
-
-E.g. facet.prefix=europe/romania:
-
-- europe/romania/bucharest: 1942
-- europe/romania/iasi: 432
-- ...
-  
-              </script></section>
-              <section data-markdown><script type="text/template">
-## Faceted search
-
-Also supports pivot facets, a.k.a decision trees:
-
-http://wiki.apache.org/solr/HierarchicalFaceting#Pivot_Facets
-
-
-              </script></section>
-              <section data-markdown><script type="text/template">
-## Relevancy and boosting
-
-Solr computes a *score* for each matching document.
-
-By default, it uses a TF-IDF scoring model *(complicated, see docs)*
-
-              </script></section>
-              <section data-markdown><script type="text/template">
-## Relevancy and boosting
-
-Each of the criterions in a query can be given a greater importance (or "boosted"). 
-
-E.g we may care a lot more about the author or title than the genre or publisher.
-
-              </script></section>
-              <section data-markdown><script type="text/template">
-## Relevancy and boosting
-
-Correctly boosting a field or another is extremely error prone.
-
-This makes or breaks a search engine.
+{ field: "manufacturer", value: "Ford", count: 407,
+  pivot: [
+    { field: "year", value: 2000, count: 158,
+      pivot: [
+        { field: "fuel_type", value: "Petrol", count: 113 },
+        { field: "fuel_type", value: "Diesel", count: 45 }]},
+    { field: "year", value: 2001, count: 158,
+      pivot: [
+        { field: "fuel_type", value: "Petrol", count: 118 },
+        { field: "fuel_type", value: "Diesel", count: 40 }]},
+    { field: "year", value: 2002, count: 91, pivot: [
+        { field: "fuel_type", value: "Petrol", count: 70 },
+        { field: "fuel_type", value: "Diesel", count: 21 }]}]},
+{ field: "manufacturer", value: "Volkswagen", count: 31, ...
+```
 
               </script></section>
               <section data-markdown><script type="text/template">
 
-## Other query-related goodies
+## Ranged faceting 
 
-Spatial search:
-http://wiki.apache.org/solr/SpatialSearch
+Automatically create ranges and do counts from numeric and date fields:
 
-More like this: 
-http://wiki.apache.org/solr/MoreLikeThis
+```
+/select?facet.range=cost
+  &f.cost.facet.range.start: "0",
+  &f.cost.facet.range.gap: "100",
+  &f.cost.facet.range.end: "2000",
 
-Spell&nbsp;checker:&nbsp;http://wiki.apache.org/solr/SpellCheckComponent
+facet_ranges: {
+  cost: {
+    counts: [
+      "300", 13,
+      "400", 51,
+      "500", 141,
+      "800", 121,
+      "1000", 36,
+      "1100", 2 
+    ]
+  }
+}
+```
 
-Suggester:
-http://wiki.apache.org/solr/Suggester
+              </script></section>
+              <section data-markdown><script type="text/template">
 
+## Other functionality
+
+[Spatial search](http://wiki.apache.org/solr/SpatialSearch) - geo
+spacial queries
+
+[More like this](http://wiki.apache.org/solr/MoreLikeThis) - suggest
+similar documents
+
+[Spell-checker](http://wiki.apache.org/solr/SpellCheckComponent) -
+correct user entered queries
+
+[Suggester](http://wiki.apache.org/solr/Suggester) - get completion
+for terms
+
+[Field
+collapsing](http://wiki.apache.org/solr/CollapsingQParserPlugin) -
+obtain the first in each group (e.g after faceting)
+
+[ExpandComponent](https://issues.apache.org/jira/browse/SOLR-5720) -
+obtain more than 1 from a group, or include data from subdocuments
+
+[Highilghting](https://cwiki.apache.org/confluence/display/solr/Highlighting), 
+[Clustering](http://wiki.apache.org/solr/ClusteringComponent),
+[Joins](http://wiki.apache.org/solr/Join)
+
+*..and many more*
+
+              </script></section>
+              <section data-markdown><script type="text/template">
+# DEMO!
 
               </script></section>
               <section data-markdown><script type="text/template">
@@ -334,52 +538,62 @@ http://wiki.apache.org/solr/Suggester
 ## Solr Cloud
 
 * horizontally scalable with an N-shards, M-replicas per shard model
-* managed by Zookeeper
-* has a transaction-log *(not enabled by default !??)*
+* no single point of failure
+* transaction-log
+* durable writes
 * real-time get, near-real-time search
+* optimistic concurrency
+
+
+              </script></section>
+              <section data-markdown><script type="text/template">
+
+## Solr Cloud
+
+### C
+
+* Consistent get/update/delete, uses the transaction log
+* Requires a commit for consistent search
+* Optimistic concurrency built-in, incompatible with eventual consistency
+
+### A
+
+* As long as there's a live replica, we can read **and** write
+* When a partition happens, the larger part will still be available
+
+### P
+
+* Zookeeper
 
               </script></section>
               <section data-markdown><script type="text/template">
 ## Sharding
 
-* Index is split into a number of shards
-* Each shard has a number of replicas
-* A query can hit any shard and it will get routed properly 
-
-Recommendation about the number of shards: better too many than too few. 
-
-              </script></section>
-              <section data-markdown><script type="text/template">
-## Sharding
-
-Starting with Solr 4.4, shards can be split in two at runtime.
-
-Since, generally, if a shards needs splitting the all shards need splitting, this results in the doubling of nodes.
-
-Re-balancing not yet supported.
+* Fully transparent - will re-route requests
+* Can manually specify shards
+* Re-balancing is **not** supported.
+* Can split shards in two
 
               </script></section>
               <section data-markdown><script type="text/template">
 
-# Other related projects
+# DEMO!
               </script></section>
               <section data-markdown><script type="text/template">
 
-## Alternatives to Solr
+# Related projects
 
-* elasticsearch: http://www.elasticsearch.org/
-* Amazon CloudSearch: http://aws.amazon.com/cloudsearch/
+[elasticsearch](http://www.elasticsearch.org/)
 
-              </script></section>
-              <section data-markdown><script type="text/template">
+[Amazon CloudSearch](http://aws.amazon.com/cloudsearch/)
+*- uses Solr since March 2014*
 
-## Stuff that's usually used together with Solr
+[Apache Tika](http://tika.apache.org/)
 
-* Apache Tika: http://tika.apache.org/
-* Apache Nutch: http://nutch.apache.org/
+[Apache Nutch](http://nutch.apache.org/)
 
               </script></section>
-			</div>
+</div>
 
 		</div>
 
