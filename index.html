@@ -289,17 +289,6 @@ Solr supports defining text processing chains for handling:
               <section data-markdown><script type="text/template">
 ## The Schema - other features
 
-Lazy field loading *- may decrease IO*
-
-Compressed fields *- decrease IO, increases CPU*
-
-              </script></section>
-
-
-              </script></section>
-              <section data-markdown><script type="text/template">
-## The Schema - other features
-
 ### Copy fields
 
 Useful for having the same document field indexed in multiple ways, e.g
@@ -342,6 +331,14 @@ completely schemaless.
 * once guessed, add field to schema 
 * updates with different types will fail
 
+
+              </script></section>
+              <section data-markdown><script type="text/template">
+## The Schema - other features
+
+Lazy field loading *- may decrease IO*
+
+Compressed fields *- decrease IO, increases CPU*
 
               </script></section>
               <section data-markdown><script type="text/template">
@@ -573,6 +570,70 @@ obtain more than 1 from a group, or include data from subdocuments
 * Can manually specify shards
 * Re-balancing is **not** supported.
 * Can split shards in two
+              </script></section>
+              <section data-markdown><script type="text/template">
+## Durability
+
+Two types of commits:
+
+* Soft commits: visibility
+* Hard commits: durability
+ * openSearcher=false ensures data is written without additional overhead
+
+<br>
+Auto-soft and auto-hard commit can be individually configured.
+
+<br>
+Transaction log: ensures durability, but possibly slow server recovery
+
+
+              </script></section>
+              <section data-markdown><script type="text/template">
+
+## Optimistic Concurrency
+
+\_version\_ field: required, automatically populated by Solr with special semantics when saving documents:
+
+ * <= 0: insert, document with same ID must not already exist
+ * \> 0: update, works only if a document with the same id and exact version
+ * 0: don't care, just save the document
+
+<br>
+If update fail you get back an HTTP 409 Conflict error.
+
+              </script></section>
+              <section data-markdown><script type="text/template">
+## Partial Updates
+
+* Can send partial documents.
+* Documents are fully reindexed
+* Fields that are not sent **must be stored** or they will be lost
+
+              </script></section>
+              <section data-markdown><script type="text/template">
+
+## Atomic Updates
+
+Operations on fields:
+
+* set
+* add *(warning, can end up with duplicates)*
+* inc
+
+```
+$ curl http://localhost:8983/solr/update -H 'Content-type:application/json' -d '
+[
+ {"id"             : "car_342",
+  "version"        : 4280178075,
+  "borowed_to"     : {"set": "John McBorrower"},
+  "times_borrowed" : {"inc": 1},
+  "dates_borrowed" : {"add": "2014-06-03"}
+ }
+]'
+
+```
+
+Same limitation as partial updates: fields must be stored.
 
               </script></section>
               <section data-markdown><script type="text/template">
@@ -588,9 +649,12 @@ obtain more than 1 from a group, or include data from subdocuments
 [Amazon CloudSearch](http://aws.amazon.com/cloudsearch/)
 *- uses Solr since March 2014*
 
-[Apache Tika](http://tika.apache.org/)
+[Apache Tika](http://tika.apache.org/) - *integrates with Solr,
+allows indexing various documents directly*
 
 [Apache Nutch](http://nutch.apache.org/)
+
+[Heliosearch](http://heliosearch.org/) - *they claim to be the next Solr*
 
               </script></section>
 </div>
