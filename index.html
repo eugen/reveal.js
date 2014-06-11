@@ -102,7 +102,7 @@ Part of the Apache Lucene Project, so it is always kept in-sync with the latest 
 ## How data is organized
 
 * 1 server -> multiple cores
-* 1 core -> 1 schema + a collection of documents
+* 1 core -> 1 schema + a set of documents
 * 1 document -> list of key/value pairs
 * 1 value -> primitive value or list of values
 
@@ -324,13 +324,41 @@ completely schemaless.
               <section data-markdown><script type="text/template">
 ## The Schema - other features
 
+### Managed schema
+
+```
+  <schemaFactory class="ManagedIndexSchemaFactory"/>
+```
+Create the schema at runtime:
+
+```
+curl http://localhost:8983/solr/collection1/schema/fields/color -X \
+     PUT -H 'Content-type:application/json' --data-binary '
+{
+    "type":"string",
+    "stored":true,
+    "copyFields": [
+        "narrative",
+        "catchall"
+    ]
+}'
+```
+
+Note: full Schema API exists
+
+              </script></section>
+              <section data-markdown><script type="text/template">
+## The Schema - other features
+
 ### Schemaless mode
 
-* requires "managed" schema mode
+```
+  <schemaFactory class="ManagedIndexSchemaFactory" mutable="true"/>
+```
+
+* requires managed schema mode
 * automatically guess type when indexing
 * once guessed, add field to schema 
-* updates with different types will fail
-
 
               </script></section>
               <section data-markdown><script type="text/template">
@@ -382,7 +410,7 @@ firstName:Ion* AND lastName:*escu AND function:persidnt~2
 Distance between tokens:
 
 ```
-"captain ship"~2
+text:"captain ship"~2
 ```
 
 *(search for 'captain' appearing within at most 2 words from 'ship')*
@@ -392,7 +420,8 @@ Distance between tokens:
 
 ## Querying - Scoring
 
-Each matched document gets a score according to a TF-IDF scoring model.
+Each matched document gets a score according to a TF-IDF scoring
+model.
 
 Boosting is a way of increasing the score for matching documents
 ```
@@ -511,12 +540,9 @@ for terms
 
 [Field
 collapsing](http://wiki.apache.org/solr/CollapsingQParserPlugin) -
-obtain the first in each group (e.g after faceting)
+group by a field/obtain the first in each group
 
-[ExpandComponent](https://issues.apache.org/jira/browse/SOLR-5720) -
-obtain more than 1 from a group, or include data from subdocuments
-
-[Highilghting](https://cwiki.apache.org/confluence/display/solr/Highlighting), 
+[Highlighting](https://cwiki.apache.org/confluence/display/solr/Highlighting), 
 [Clustering](http://wiki.apache.org/solr/ClusteringComponent),
 [Joins](http://wiki.apache.org/solr/Join)
 
@@ -550,14 +576,15 @@ obtain more than 1 from a group, or include data from subdocuments
 ### C
 
 * Consistent get/update/delete, uses the transaction log
-* Requires a commit for consistent search
-* Optimistic concurrency built-in, incompatible with eventual consistency
+* Requires a soft commit for consistent search
 
+<br>
 ### A
 
 * As long as there's a live replica, we can read **and** write
 * When a partition happens, the larger part will still be available
 
+<br>
 ### P
 
 * Zookeeper
@@ -567,6 +594,8 @@ obtain more than 1 from a group, or include data from subdocuments
 ## Sharding
 
 * Fully transparent - will re-route requests
+* Writes happen on leaders
+ * are synchronouly forwarded to replicas
 * Can manually specify shards
 * Re-balancing is **not** supported.
 * Can split shards in two
@@ -601,20 +630,13 @@ Transaction log: ensures durability, but possibly slow server recovery
 <br>
 If update fail you get back an HTTP 409 Conflict error.
 
-              </script></section>
-              <section data-markdown><script type="text/template">
-## Partial Updates
-
-* Can send partial documents.
-* Documents are fully reindexed
-* Fields that are not sent **must be stored** or they will be lost
 
               </script></section>
               <section data-markdown><script type="text/template">
 
 ## Atomic Updates
 
-Operations on fields:
+Allow updating only parts of documents:
 
 * set
 * add *(warning, can end up with duplicates)*
@@ -633,7 +655,18 @@ $ curl http://localhost:8983/solr/update -H 'Content-type:application/json' -d '
 
 ```
 
-Same limitation as partial updates: fields must be stored.
+Documents are fully reindexed, fields that are not sent **must be stored** or they will be lost.
+
+
+              </script></section>
+              <section data-markdown><script type="text/template">
+# Does it scale?
+
+LucidWorks: 200+ node machines 
+
+hathitrust.org: 5M volumes, 2TB or data, 10 shards
+
+Dachis Group: 36 node cluster, 18 shards, ~900M documents, update rate of 6K/sec
 
               </script></section>
               <section data-markdown><script type="text/template">
