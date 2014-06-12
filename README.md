@@ -1,1 +1,3 @@
-You can view the presentation without cloning it here: http://eugen.ninja/solr-slides/
+### You can view the presentation without cloning it here: 
+
+http://eugen.ninja/solr-slides/
